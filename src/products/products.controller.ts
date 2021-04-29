@@ -2,20 +2,30 @@ import {Body, Controller, Delete, Get, Param, Patch, Post, Query} from '@nestjs/
 import {ProductsService} from "./products.service";
 import {CreateProductDto} from "./dto/create-product.dto";
 import {UpdateProductDto} from "./dto/update-product.dto";
+import {PaginationQueryDto} from "../common/dto/pagination-query.dto";
+import {Public} from "../common/decorators/public.decorator";
+import {ParseIntPipe} from "../common/pipes/parse-int.pipe";
+import {Protocol} from "../common/decorators/protocol.decorator";
+import {ApiForbiddenResponse, ApiTags} from "@nestjs/swagger";
 
+@ApiTags('products')
 @Controller('products')
 export class ProductsController {
     constructor(private readonly productsService: ProductsService) {
     }
 
+    @ApiForbiddenResponse({ description: 'Forbidden.' })
     @Get()
-    findAll(@Query() paginationQuery) {
-        const {limit, offset} = paginationQuery;
-        return this.productsService.findAll();
+    @Public()
+    async findAll(@Query() paginationQuery: PaginationQueryDto) {
+        return this.productsService.findAll(paginationQuery);
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
+    @Public()
+    findOne(@Protocol() protocol: string,
+            @Param('id', ParseIntPipe) id: number) {
+        console.log(protocol);
         return this.productsService.findOne(id);
     }
 
