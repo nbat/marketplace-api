@@ -1,25 +1,32 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
 import {Product} from "./entities/product.entity";
+import {InjectConnection, InjectModel} from "@nestjs/mongoose";
+import {Connection, Model} from "mongoose";
+import {UpdateProductDto} from "./dto/update-product.dto";
+import {PaginationQueryDto} from "../common/dto/pagination-query.dto";
+import {Event} from "../events/entities/event.entity";
 
 @Injectable()
 export class ProductsService {
-    private products: Product[] = [
-        {
-            id: 1,
-            title: 'Lowpoly street racing car 3d model',
-            brand: 'Lowpoly',
-            slug: 'lowpoly-street-racing-car-3d-model',
-            sku: '10548',
-            tags: ['lowpoly muscle car', 'lowpoly racing car'],
-        },
-    ];
 
-    findAll() {
-        return this.products;
+    constructor(
+        @InjectModel(Product.name) private readonly productModel: Model<Product>,
+        @InjectConnection() private readonly connection: Connection,
+        @InjectModel(Event.name) private readonly eventModel: Model<Event>
+    ) {
     }
 
-    findOne(id: string) {
-        const product = this.products.find(item => item.id === +id);
+    findAll(paginationQuery: PaginationQueryDto) {
+        const {limit, offset} = paginationQuery;
+        return this.productModel
+            .find()
+            .skip(offset)
+            .limit(limit)
+            .exec();
+    }
+
+    async findOne(id: string) {
+        const product = await this.productModel.findOne({_id: id}).exec();
         if (!product) {
             throw new NotFoundException(`Product id ${id} not found`);
         }
@@ -27,20 +34,48 @@ export class ProductsService {
     }
 
     create(createProductDto: any) {
-        this.products.push(createProductDto);
+        const product = new this.productModel(createProductDto);
+        return product.save()
     }
 
-    update(id: string, updateProductDto: any) {
-        const existingProduct = this.findOne(id);
-        if (existingProduct) {
-            // Update Product
+    async update(id: string, updateProductDto: UpdateProductDto) {
+        const existingProduct = await this.productModel
+            .findOneAndUpdate({_id: id}, {$set: updateProductDto}, {new: true})
+            .exec()
+
+        if (!existingProduct) {
+            throw new NotFoundException(`Product ${id} not found`)
         }
+
+        return existingProduct;
     }
 
-    remove(id: string) {
-        const productIndex = this.products.findIndex(item => item.id === +id)
-        if (productIndex >= 0) {
-            this.products.splice(productIndex, 1)
+    async remove(id: string) {
+        const product = await this.findOne(id);
+        return product.remove();
+    }
+
+    async recommendProduct(product: Product) {
+        const session = await this.connection.startSession();
+        session.startTransaction();
+
+        try {
+            product.recommendations++;
+
+            const recommendEvent = new this.eventModel({
+                name: 'recommend_product',
+                type: 'product',
+                payload: {productId: product.id}
+            });
+
+            await recommendEvent.save();
+            await product.save();
+
+            await session.commitTransaction();
+        } catch (err) {
+            await session.abortTransaction();
+        } finally {
+            session.endSession()
         }
     }
 }
