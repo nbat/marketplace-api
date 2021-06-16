@@ -25,7 +25,6 @@ export class ProductsController {
     @Public()
     findOne(@Protocol() protocol: string,
             @Param('id', ParseIntPipe) id: number) {
-        console.log(protocol);
         return this.productsService.findOne(id);
     }
 
